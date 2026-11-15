@@ -42,6 +42,10 @@ const HK_PICKS = [
   ["4893318633536", "維記低脂高鈣奶"], ["4890008171606", "陽光檸檬茶"], ["6937761805022", "寶礦力水特"],
 ];
 
+// The newest products from users, and a stamp that changes when a user adds or completes a product.
+// Read once per visit (the api() memory cache is cleared after a user submits a product).
+const userProducts = () => api("/api/products/recent?limit=8");
+
 const P_ALL = { id: "all", name_zh: "全部包裝食品", name_en: "All products" };
 const marketName = (id) => PMETA.markets.find((m) => m.id === id)?.name_zh || id;
 const pHref = (cid, o = {}) => {
@@ -60,7 +64,7 @@ function productRow(p) {
   const sub = [p.brand, p.quantity].filter(Boolean).map(esc).join(" · ");
   return `<li><a class="prow" href="#/p/i/${encodeURIComponent(p.code)}">
     ${thumb(p)}
-    <span class="pmain"><span class="nm">${esc(p.name)}${p.origin === "user" ? ' <span class="pill user-pill">用戶新增</span>' : ""}</span><span class="sub">${sub || '<span class="muted">未有品牌資料</span>'}</span></span>
+    <span class="pmain"><span class="nm">${esc(p.name)}${p.origin === "user" ? ' <span class="pill user-pill">用戶新增</span>' : p.origin === "off_user" ? ' <span class="pill user-pill">用戶補充標籤</span>' : ""}</span><span class="sub">${sub || '<span class="muted">未有品牌資料</span>'}</span></span>
     <span class="kc">${p.has_nutrition && typeof p.energy_kcal === "number" ? `${Math.round(p.energy_kcal)}<small>kcal/100${perUnit(p) === "毫升" ? "ml" : "g"}</small>` : '<small class="nodata">未有營養資料</small>'}</span>
   </a></li>`;
 }
@@ -94,6 +98,12 @@ async function productsHome() {
       </div>
       <div class="meta-line"><a href="#/p/c/all"><b>${PMETA.total.toLocaleString()}</b> 件產品</a> · <b>${PMETA.markets.length}</b> 個亞洲地區 · 資料來源 <b>Open Food Facts</b></div>
       <div class="meta-line">找不到你的產品？<a class="link" href="#/p/add">新增產品</a></div>
+    </section>
+
+    <section class="home-section" id="pRecentBox" hidden>
+      <div class="section-head"><h2>用戶最新加入</h2><a class="eyebrow" href="#/p/c/all">全部產品 ›</a></div>
+      <p class="muted section-note">由本站用戶新增或補上營養資料的產品，最新的排先。資料未經核實。</p>
+      <div class="pcards" id="pRecent"></div>
     </section>
 
     <section class="home-section">
@@ -143,6 +153,19 @@ async function productsHome() {
     }, 400);
   });
   document.getElementById("pScan").addEventListener("click", openScanner);
+  userProducts().then((r) => {
+    const box = document.getElementById("pRecent");
+    if (!box || !r.results.length) return;
+    box.innerHTML = r.results.map((p) => `
+      <a href="#/p/i/${encodeURIComponent(p.code)}">
+        ${thumb(p, "pimg")}
+        <div class="nm">${esc(p.name)}</div>
+        <div class="sub">${esc([p.brand, p.quantity].filter(Boolean).join(" · "))}</div>
+        <div class="sub"><span class="pill user-pill">${p.origin === "user" ? "用戶新增" : "用戶補充標籤"}</span> ${esc((p.created || "").slice(0, 10))}</div>
+        <div class="kc">${typeof p.energy_kcal === "number" ? Math.round(p.energy_kcal) : "—"}<small>kcal/100${perUnit(p) === "毫升" ? "ml" : "g"}</small></div>
+      </a>`).join("");
+    document.getElementById("pRecentBox").hidden = false;
+  }).catch(() => {});
   const d = await api(`/api/products/codes?codes=${HK_PICKS.map(([c]) => c).join(",")}`);
   const box = document.getElementById("pPopular");
   if (!box) return;
@@ -169,6 +192,7 @@ async function productCategory(cid, params) {
   loading();
   const qs = new URLSearchParams({ c: cid, sort, page: String(page) });
   if (m) qs.set("m", m);
+  qs.set("u", (await userProducts().catch(() => ({ stamp: "0" }))).stamp);   // new user products: read the list again
   const d = await api(`/api/products/list?${qs}`);
   const pages = Math.max(Math.ceil(d.total / d.page_size), 1);
   const href = (o) => pHref(cid, { m, sort, page: 1, ...o });

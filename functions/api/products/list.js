@@ -1,11 +1,13 @@
 // GET /api/products/list?c=<category | all>&m=<market code>&sort=<popular|name|kcalAsc|kcalDesc|protein>&page=<n>
+// Default sort (popular): products added or completed by users first, then by Open Food Facts scans.
+// u=<stamp of /api/products/recent> is only part of the cache key.
 // Products of one category (or all), optionally only those sold in one market. 40 per page.
 import { json, bad, cached } from "../../_lib.js";
 import { pdb, listCols } from "../../_products.js";
 
 const PAGE = 40;
 const SORTS = {
-  popular: "p.has_nutrition DESC, p.scans DESC, p.code",
+  popular: "(p.origin = 'off'), p.has_nutrition DESC, p.scans DESC, p.code",   // products from users first
   name: "p.name COLLATE NOCASE, p.code",
   kcalAsc: "p.energy_kcal IS NULL, p.energy_kcal, p.code",
   kcalDesc: "p.energy_kcal IS NULL, p.energy_kcal DESC, p.code",
