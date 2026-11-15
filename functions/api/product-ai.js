@@ -10,7 +10,7 @@ import { json, bad, cached } from "../_lib.js";
 import { pdb, barcodeVariants, getProduct } from "../_products.js";
 
 // Change this when the prompt changes, so cached answers made with the old prompt are not used.
-const AI_VERSION = "1";
+export const AI_VERSION = "1";
 const MAX_AGE = 30 * 86400;
 
 const SYSTEM = `你是香港的註冊營養師，為一般市民評估包裝食品是否健康。

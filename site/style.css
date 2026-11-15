@@ -496,3 +496,13 @@ a.scan-cta { text-decoration: none; }
   .ai-ring-wait .wait-arc { animation-duration: 3s; }
   .ai-ring .arc { transition: none; }
 }
+
+/* fill in a missing label */
+.fill-cta { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.fill-cta > div { display: grid; gap: 4px; flex: 1; min-width: 220px; }
+.fill-cta .scan-cta { height: 44px; font-size: 15px; }
+.fill-product { display: flex; align-items: center; gap: 16px; }
+.fill-product .thumb { width: 72px; height: 72px; }
+.fill-product > div { display: grid; gap: 2px; min-width: 0; }
+.fill-product .sub { font-size: 13px; color: var(--ink-3); }
+.empty-nutrition.fill-cta a.scan-cta { color: var(--ink); }
