@@ -506,3 +506,11 @@ a.scan-cta { text-decoration: none; }
 .fill-product > div { display: grid; gap: 2px; min-width: 0; }
 .fill-product .sub { font-size: 13px; color: var(--ink-3); }
 .empty-nutrition.fill-cta a.scan-cta { color: var(--ink); }
+
+/* delete a user-added product (bottom of its page) */
+.danger-zone { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin: 8px 0 6px; padding: 16px 18px; border: 1px solid #F2C4B5; border-radius: var(--r-md); background: #FFF6F3; }
+.danger-zone > div { display: grid; gap: 2px; flex: 1; min-width: 220px; font-size: 13px; color: var(--ink-2); }
+.danger-zone strong { color: var(--ink); font-size: 15px; }
+.btn-danger { height: 42px; padding: 0 20px; border-radius: 999px; border: 1.5px solid #D2380E; background: var(--surface); color: #B42F0B; font-weight: 800; font-size: 14px; cursor: pointer; }
+.btn-danger:hover { background: #D2380E; color: #FFFFFF; }
+.btn-danger:disabled { opacity: .6; cursor: wait; }

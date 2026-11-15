@@ -100,15 +100,9 @@ async function productsHome() {
       <div class="meta-line">找不到你的產品？<a class="link" href="#/p/add">新增產品</a></div>
     </section>
 
-    <section class="home-section" id="pRecentBox" hidden>
-      <div class="section-head"><h2>用戶最新加入</h2><a class="eyebrow" href="#/p/c/all">全部產品 ›</a></div>
-      <p class="muted section-note">由本站用戶新增或補上營養資料的產品，最新的排先。資料未經核實。</p>
-      <div class="pcards" id="pRecent"></div>
-    </section>
-
     <section class="home-section">
       <div class="section-head"><h2>香港人熟悉的產品</h2><a class="eyebrow" href="${pHref("all", { m: "HK" })}">標示在香港有售的產品 ›</a></div>
-      <p class="muted section-note">本站挑選的香港常見產品。營養數值來自 Open Food Facts 用戶輸入的包裝標籤，只供參考。</p>
+      <p class="muted section-note">本站挑選的香港常見產品；本站用戶新增或補充的產品排在最前。營養數值由用戶按包裝標籤輸入，只供參考。</p>
       <div class="pcards" id="pPopular"><p class="muted">載入中…</p></div>
     </section>
 
@@ -153,28 +147,21 @@ async function productsHome() {
     }, 400);
   });
   document.getElementById("pScan").addEventListener("click", openScanner);
-  userProducts().then((r) => {
-    const box = document.getElementById("pRecent");
-    if (!box || !r.results.length) return;
-    box.innerHTML = r.results.map((p) => `
-      <a href="#/p/i/${encodeURIComponent(p.code)}">
-        ${thumb(p, "pimg")}
-        <div class="nm">${esc(p.name)}</div>
-        <div class="sub">${esc([p.brand, p.quantity].filter(Boolean).join(" · "))}</div>
-        <div class="sub"><span class="pill user-pill">${p.origin === "user" ? "用戶新增" : "用戶補充標籤"}</span> ${esc((p.created || "").slice(0, 10))}</div>
-        <div class="kc">${typeof p.energy_kcal === "number" ? Math.round(p.energy_kcal) : "—"}<small>kcal/100${perUnit(p) === "毫升" ? "ml" : "g"}</small></div>
-      </a>`).join("");
-    document.getElementById("pRecentBox").hidden = false;
-  }).catch(() => {});
-  const d = await api(`/api/products/codes?codes=${HK_PICKS.map(([c]) => c).join(",")}`);
+  // products that users added or completed come first (newest first), then the hand-picked ones
+  const [d, mine] = await Promise.all([
+    api(`/api/products/codes?codes=${HK_PICKS.map(([c]) => c).join(",")}`),
+    userProducts().catch(() => ({ results: [] })),
+  ]);
   const box = document.getElementById("pPopular");
   if (!box) return;
   const label = Object.fromEntries(HK_PICKS);
-  box.innerHTML = d.results.map((p) => ({ ...p, sub: p.name, name: label[p.code] || p.name })).map((p) => `
+  const picked = d.results.filter((p) => !mine.results.some((u) => u.code === p.code));
+  box.innerHTML = [...mine.results, ...picked.map((p) => ({ ...p, sub: p.name, name: label[p.code] || p.name }))].map((p) => `
     <a href="#/p/i/${encodeURIComponent(p.code)}">
       ${thumb(p, "pimg")}
       <div class="nm">${esc(p.name)}</div>
       <div class="sub">${esc([p.brand, p.sub && p.sub !== p.name && p.sub.toLowerCase() !== (p.brand || "").toLowerCase() ? p.sub : p.quantity].filter(Boolean).join(" · "))}</div>
+      ${p.origin && p.origin !== "off" ? `<div class="sub"><span class="pill user-pill">${p.origin === "user" ? "用戶新增" : "用戶補充標籤"}</span></div>` : ""}
       <div class="kc">${typeof p.energy_kcal === "number" ? Math.round(p.energy_kcal) : "—"}<small>kcal/100${perUnit(p) === "毫升" ? "ml" : "g"}</small>${nutriBadge(p.nutriscore)}</div>
     </a>`).join("");
 }
@@ -345,12 +332,16 @@ async function productPage(code) {
     </section>` : ""}
     ${d.same_brand.length ? `<section class="card"><div class="section-head"><h2>同品牌產品</h2><span class="eyebrow">${esc(p.brand)}</span></div>
       <ul class="list plist">${d.same_brand.map(productRow).join("")}</ul></section>` : ""}
-    ${p.origin === "user" ? `<p class="src source-line">資料來源：本站用戶新增${p.last_modified ? `（${esc(p.last_modified)}）` : ""}，未經核實。</p>`
+    ${p.origin === "user" ? `<p class="src source-line">資料來源：本站用戶新增${p.last_modified ? `（${esc(p.last_modified)}）` : ""}，未經核實。</p>
+      <div class="danger-zone"><div><strong>刪除這件產品</strong><span>只可刪除由本站用戶新增的產品。刪除後不能復原，相片亦會一併刪除。需要新增密碼。</span></div>
+        <button type="button" class="btn-danger" id="delBtn">刪除產品</button></div>
+      <p class="form-status" id="delStatus" role="status"></p>`
       : p.origin === "off_user" ? `<p class="src source-line">資料來源：<a class="link" href="${offUrl}" target="_blank" rel="noopener">Open Food Facts</a>（授權：${esc(d.source.licence)}）；營養標籤由本站用戶補充${p.last_modified ? `（${esc(p.last_modified)}）` : ""}，未經核實。</p>`
       : `<p class="src source-line">資料來源：<a class="link" href="${offUrl}" target="_blank" rel="noopener">Open Food Facts</a>${p.last_modified ? ` · 最後更新：${esc(p.last_modified)}` : ""} · 授權：${esc(d.source.licence)}。${esc(d.source.note)}</p>`}
   </div>`;
 
   if (document.getElementById("aiBody")) runAi(p.code);   // automatic: saved answers load at once
+  document.getElementById("delBtn")?.addEventListener("click", () => deleteProduct(p));
   if (p.has_nutrition) {
     const nv = Object.fromEntries(Object.entries(n).map(([k, v]) => [k, { value: v }]));   // shape used by macros()
     const render = (amount, text) => {
@@ -728,6 +719,41 @@ function addPasswordGate(code, fill = null) {
       document.getElementById("gatePw").select();
     }
   });
+}
+
+// ---------- delete a user-added product (needs the add password) ----------
+
+async function deleteProduct(p) {
+  const st = document.getElementById("delStatus");
+  const say = (t) => { if (st) { st.className = "form-status warn"; st.textContent = t; } };
+  if (!confirm(`確定要刪除「${p.name}」嗎？刪除後不能復原。`)) return;
+  let pw = sessionStorage.getItem(ADD_PW_KEY);
+  if (!pw) {
+    pw = prompt("請輸入新增密碼");
+    if (!pw) return;
+  }
+  const btn = document.getElementById("delBtn");
+  btn.disabled = true;
+  try {
+    const r = await fetch("/api/contribute/delete", {
+      method: "POST", body: JSON.stringify({ code: p.code, api_version: API_VERSION }),
+      headers: { "content-type": "application/json", "x-add-password": pw },
+    });
+    if (r.ok) {
+      sessionStorage.setItem(ADD_PW_KEY, pw);
+      cache.clear();
+      FRESH[p.code] = Date.now();
+      location.hash = "#/p";
+      return;
+    }
+    if (r.status === 401) { sessionStorage.removeItem(ADD_PW_KEY); say("新增密碼不正確，未有刪除。"); }
+    else if (r.status === 403) say("只可刪除由本站用戶新增的產品。");
+    else say("未能刪除，請稍後再試。");
+  } catch {
+    say("網絡出錯，未能刪除，請再試。");
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 // ---------- barcode scanner ----------
