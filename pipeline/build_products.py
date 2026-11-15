@@ -116,12 +116,10 @@ NUTRIENT_MAP = {
 GRAM_IDS = {"protein", "carbohydrate", "fat", "fat_sat", "fat_trans", "fat_mono", "fat_poly", "fibre", "sugars", "salt_eq", "water"}
 KEY = ["energy_kcal", "protein", "fat", "carbohydrate", "sugars", "fibre", "sodium"]
 
-SCHEMA = f"""
-CREATE TABLE product_categories (id TEXT PRIMARY KEY, name_zh TEXT NOT NULL, name_en TEXT NOT NULL,
-    sort_order INTEGER NOT NULL, n INTEGER NOT NULL);
-CREATE TABLE product_markets (id TEXT PRIMARY KEY, name_zh TEXT NOT NULL, sort_order INTEGER NOT NULL, n INTEGER NOT NULL);
-CREATE TABLE products (
-    code TEXT PRIMARY KEY,            -- barcode (EAN-13, UPC-A, EAN-8 ...)
+# Columns of products and of user_products (same order). origin: 'off' (Open Food Facts) or 'user'
+# (added on the site). photos: JSON list of photo paths (/photos/...) for user products.
+PRODUCT_COLUMNS = f"""
+    code TEXT PRIMARY KEY,            -- barcode (EAN-13, UPC-A, EAN-8 ...); user products without one: 29 + 11 digits
     name TEXT NOT NULL, generic_name TEXT, brand TEXT, quantity TEXT,
     category TEXT NOT NULL, off_category TEXT,
     markets TEXT NOT NULL,            -- ',HK,JP,' (leading/trailing comma, for LIKE '%,HK,%')
@@ -134,11 +132,31 @@ CREATE TABLE products (
     ingredients TEXT, allergens TEXT, traces TEXT, labels TEXT,
     scans INTEGER NOT NULL,           -- unique scans on Open Food Facts (popularity)
     last_modified TEXT,
-    search_text TEXT NOT NULL
+    search_text TEXT NOT NULL,
+    origin TEXT NOT NULL DEFAULT 'off',
+    photos TEXT"""
+def _column_names():
+    con = sqlite3.connect(":memory:")
+    con.execute(f"CREATE TABLE t ({PRODUCT_COLUMNS})")
+    return [r[1] for r in con.execute("PRAGMA table_info(t)")]
+
+
+COLUMN_NAMES = _column_names()
+
+SCHEMA = f"""
+CREATE TABLE product_categories (id TEXT PRIMARY KEY, name_zh TEXT NOT NULL, name_en TEXT NOT NULL,
+    sort_order INTEGER NOT NULL, n INTEGER NOT NULL);
+CREATE TABLE product_markets (id TEXT PRIMARY KEY, name_zh TEXT NOT NULL, sort_order INTEGER NOT NULL, n INTEGER NOT NULL);
+CREATE TABLE products ({PRODUCT_COLUMNS}
 ) WITHOUT ROWID;
 CREATE INDEX products_cat ON products(category, scans DESC);
 CREATE VIRTUAL TABLE products_fts USING fts5(code UNINDEXED, search_text, tokenize='trigram', columnsize=0);
 """
+# Products added by users on the site (functions/api/contribute/product.js). This is the master copy:
+# a rebuild replaces products, then copies these rows into it again. Never dropped by the build.
+USER_SCHEMA = f"""CREATE TABLE IF NOT EXISTS user_products ({PRODUCT_COLUMNS},
+    created TEXT NOT NULL
+) WITHOUT ROWID;"""
 
 
 def num(s):
@@ -235,7 +253,7 @@ def build(write_sql=False):
                 clean(row.get("ingredients_text"), 3000), clean(row.get("allergens_en"), 300),
                 clean(row.get("traces_en"), 300), clean(row.get("labels_en"), 300),
                 int(num(row.get("unique_scans_n")) or 0), clean(row.get("last_modified_datetime"), 10),
-                search.lower(),
+                search.lower(), "off", None,
             ))
             cats[cat] += 1
             for m in markets:
@@ -276,6 +294,7 @@ def export_sql(db):
         for t in ("products_fts", *reversed(tables)):
             fh.write(f"DROP TABLE IF EXISTS {t};\n")
         fh.write(SCHEMA.strip() + "\n")
+        fh.write(USER_SCHEMA + "\n")
         n = 0
         for line in db.iterdump():
             if line.startswith(tuple(f'INSERT INTO "{t}" ' for t in tables)):
@@ -286,7 +305,17 @@ def export_sql(db):
         for lo, hi in zip(bounds, bounds[1:]):
             where = f"code >= '{lo}'" + (f" AND code < '{hi}'" if hi else "")
             fh.write(f"INSERT INTO products_fts (code, search_text) SELECT code, search_text FROM products WHERE {where};\n")
+        fh.write(restore_user_products_sql())
     print(f"Wrote {SQL_OUT} ({n:,} rows, {len(bounds) - 1} search index batches)")
+
+
+def restore_user_products_sql():
+    """SQL that copies the user products into products again after a rebuild, with the counts."""
+    cols = ", ".join(COLUMN_NAMES)
+    return (f"INSERT OR REPLACE INTO products ({cols}) SELECT {cols} FROM user_products;\n"
+            "INSERT INTO products_fts (code, search_text) SELECT code, search_text FROM user_products;\n"
+            "UPDATE product_categories SET n = n + (SELECT COUNT(*) FROM user_products u WHERE u.category = product_categories.id);\n"
+            "UPDATE product_markets SET n = n + (SELECT COUNT(*) FROM user_products u WHERE u.markets LIKE '%,' || product_markets.id || ',%');\n")
 
 
 def insert(db, rows):

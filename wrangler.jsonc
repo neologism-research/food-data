@@ -20,5 +20,10 @@
       "database_name": "products-db",
       "database_id": "110dc6ff-cbfe-4c19-bc61-ee44ac389eb7"
     }
+  ],
+  // Photos of products added by users (private bucket, APAC, created 2026-11-15). Served by /photos/*
+  // behind the site password; never public.
+  "r2_buckets": [
+    { "binding": "PHOTOS", "bucket_name": "hk-food-product-photos" }
   ]
 }

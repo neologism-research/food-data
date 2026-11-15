@@ -11,6 +11,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from .build_products import USER_SCHEMA, restore_user_products_sql
+
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "data" / "export" / "products.db"
 STATE = ROOT / ".wrangler" / "state" / "v3" / "d1" / "miniflare-D1DatabaseObject"
@@ -43,6 +45,9 @@ def main():
         db.execute(sql)
     db.execute("CREATE VIRTUAL TABLE products_fts USING fts5(code UNINDEXED, search_text, tokenize='trigram', columnsize=0)")
     db.execute("INSERT INTO products_fts (code, search_text) SELECT code, search_text FROM main.products")
+    # products added on the site (user_products) are kept: copy them into products again
+    db.execute(USER_SCHEMA)
+    db.executescript(restore_user_products_sql())
     db.commit()
     print(f"Local D1: {db.execute('SELECT COUNT(*) FROM main.products').fetchone()[0]:,} products loaded.")
 

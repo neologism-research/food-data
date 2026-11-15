@@ -12,7 +12,17 @@ export const OFF_ATTRIBUTION = {
 };
 
 export const PRODUCT_LIST_COLS = ["code", "name", "brand", "quantity", "category", "image", "nutriscore",
-  "energy_kcal", "protein", "fat", "carbohydrate", "has_nutrition"];
+  "energy_kcal", "protein", "fat", "carbohydrate", "has_nutrition", "origin"];
+
+// Adding products on the site needs the secret ADD_PASSWORD (separate from the site password).
+// Returns null if the password is correct, else an error Response.
+export function addPasswordError(env, password) {
+  if (!env.ADD_PASSWORD) return new Response(JSON.stringify({ error: "adding products is not set up (ADD_PASSWORD)" }),
+    { status: 503, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
+  if (password !== env.ADD_PASSWORD) return new Response(JSON.stringify({ error: "wrong password" }),
+    { status: 401, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
+  return null;
+}
 export const listCols = (a = "p") => PRODUCT_LIST_COLS.map((c) => `${a}.${c}`).join(", ");
 
 // Barcodes: digits only, 6-14 long. EAN-13 / UPC-A codes may be stored with or without a leading 0.

@@ -49,7 +49,7 @@ const pHref = (cid, o = {}) => {
   return `#/p/c/${cid}${qs.toString() ? "?" + qs : ""}`;
 };
 // Products with "ml" / "L" in the quantity are drinks: their label values are per 100 ml.
-const perUnit = (p) => (/\d\s*(ml|cl|l)\b|毫升|公升|ミリリットル/i.test(p.quantity || "") || p.category === "drinks" || p.category === "alcohol" ? "毫升" : "克");
+const perUnit = (p) => (p.nutrients?._per === "ml" || /\d\s*(ml|cl|l)\b|毫升|公升|ミリリットル/i.test(p.quantity || "") || p.category === "drinks" || p.category === "alcohol" ? "毫升" : "克");
 const ICON_BOX = '<svg class="icon" viewBox="0 0 24 24"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/></svg>';
 const thumb = (p, cls = "thumb") => p.image
   ? `<span class="${cls}"><img src="${esc(p.image)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer"></span>`
@@ -60,7 +60,7 @@ function productRow(p) {
   const sub = [p.brand, p.quantity].filter(Boolean).map(esc).join(" · ");
   return `<li><a class="prow" href="#/p/i/${encodeURIComponent(p.code)}">
     ${thumb(p)}
-    <span class="pmain"><span class="nm">${esc(p.name)}</span><span class="sub">${sub || '<span class="muted">未有品牌資料</span>'}</span></span>
+    <span class="pmain"><span class="nm">${esc(p.name)}${p.origin === "user" ? ' <span class="pill user-pill">用戶新增</span>' : ""}</span><span class="sub">${sub || '<span class="muted">未有品牌資料</span>'}</span></span>
     <span class="kc">${p.has_nutrition && typeof p.energy_kcal === "number" ? `${Math.round(p.energy_kcal)}<small>kcal/100${perUnit(p) === "毫升" ? "ml" : "g"}</small>` : '<small class="nodata">未有營養資料</small>'}</span>
   </a></li>`;
 }
@@ -69,6 +69,7 @@ async function productRoute(parts, params) {
   if (parts[0] === "c" && parts[1]) return productCategory(parts[1], params);
   if (parts[0] === "search" && parts[1]) return productSearch(parts[1]);
   if (parts[0] === "i" && parts[1]) return productPage(parts[1]);
+  if (parts[0] === "add") return productAdd(params.get("code") || "");
   return productsHome();
 }
 
@@ -91,6 +92,7 @@ async function productsHome() {
           掃描條碼</button>
       </div>
       <div class="meta-line"><a href="#/p/c/all"><b>${PMETA.total.toLocaleString()}</b> 件產品</a> · <b>${PMETA.markets.length}</b> 個亞洲地區 · 資料來源 <b>Open Food Facts</b></div>
+      <div class="meta-line">找不到你的產品？<a class="link" href="#/p/add">新增產品</a></div>
     </section>
 
     <section class="home-section">
@@ -212,7 +214,7 @@ async function productSearch(term) {
     <h1 class="page">搜尋「${esc(term)}」</h1>
     <p class="muted">找到 ${d.total.toLocaleString()} 件產品${d.total > d.results.length ? `，顯示首 ${d.results.length} 件` : ""}</p>
     <div class="card"><ul class="list plist">${d.results.map(productRow).join("") ||
-      `<li class="muted">找不到符合的產品。可以試試<a class="link" href="#/search/${encodeURIComponent(term)}">在「食物」中搜尋「${esc(term)}」</a>，或<button type="button" class="link" onclick="openScanner()">掃描條碼</button>。</li>`}</ul></div>`;
+      `<li class="muted">找不到符合的產品。可以試試<a class="link" href="#/search/${encodeURIComponent(term)}">在「食物」中搜尋「${esc(term)}」</a>，或<button type="button" class="link" onclick="openScanner()">掃描條碼</button>。如果本站沒有這件產品，你可以<a class="link" href="#/p/add${/^\d{6,14}$/.test(term) ? `?code=${term}` : ""}">新增產品</a>。</li>`}</ul></div>`;
 }
 
 // ---------- product page ----------
@@ -241,7 +243,7 @@ function productLabel(n, factor, servingText) {
           ${more.map((id) => `<tr><td>${esc(NUTRIENTS[id].name_zh || NUTRIENTS[id].name_en)}</td><td>${val(id)}</td></tr>`).join("")}` : ""}
       </table>
     </div>
-    <p class="src">數值按 Open Food Facts 記錄的包裝標籤（每100${esc(servingText.includes("毫升") ? "毫升" : "克")}）換算。「—」表示沒有資料。</p>`;
+    <p class="src">數值按記錄的包裝標籤（每100${esc(servingText.includes("毫升") ? "毫升" : "克")}）換算。「—」表示沒有資料。</p>`;
 }
 
 const NOVA = { 1: "未經加工或輕度加工", 2: "烹調用配料", 3: "加工食品", 4: "超加工食品" };
@@ -269,6 +271,7 @@ async function productPage(code) {
   app.innerHTML = `<div class="food-page product-page">
     ${crumbs(path)}
     ${d.live ? `<div class="notice">本站未收錄這件產品，以下資料即時取自 Open Food Facts。</div>` : ""}
+    ${p.origin === "user" ? `<div class="notice">這件產品由本站用戶新增，資料未經核實，請以包裝為準。</div>` : ""}
     <section class="card">
       <div class="food-head">
         ${p.image ? `<a class="pphoto" href="${esc(p.image.replace(/\.(\d+)\.jpg$/, ".400.jpg"))}" target="_blank" rel="noopener"><img src="${esc(p.image)}" alt="${esc(p.name)} 包裝相片" referrerpolicy="no-referrer"></a>` : `<span class="pphoto empty">${ICON_BOX}</span>`}
@@ -276,7 +279,8 @@ async function productPage(code) {
           <h1>${esc(p.name)}</h1>
           <div class="en">${esc([p.brand, p.quantity].filter(Boolean).join(" · "))}${p.generic_name ? `<br><span class="muted">${esc(p.generic_name)}</span>` : ""}</div>
           <div class="chips">
-            <span class="pill soft barcode">${esc(p.code)}</span>
+            ${p.code.startsWith("29") && p.origin === "user" ? '<span class="pill soft">沒有條碼</span>' : `<span class="pill soft barcode">${esc(p.code)}</span>`}
+            ${p.origin === "user" ? '<span class="pill user-pill">用戶新增</span>' : ""}
             ${p.nutriscore ? `<span class="pill nutri-pill nutri-${p.nutriscore}">Nutri-Score ${p.nutriscore.toUpperCase()}</span>` : ""}
             ${p.nova ? `<span class="pill soft" title="NOVA 加工程度分類">NOVA ${p.nova} · ${NOVA[p.nova]}</span>` : ""}
             ${p.off_category ? `<span class="pill soft">${esc(p.off_category)}</span>` : ""}
@@ -291,10 +295,12 @@ async function productPage(code) {
           <label>自訂 <input type="number" id="grams" min="1" max="5000" step="1" placeholder="${u}" aria-label="自訂分量"> ${u}</label>
         </div>
       </div>
-      <div class="kcal-card" id="kcalCard"></div>` : `<div class="empty-nutrition">
+      <div class="kcal-card" id="kcalCard"></div>` : p.origin === "user" ? `<div class="empty-nutrition"><strong>新增這件產品的用戶未有填寫營養資料。</strong></div>` : `<div class="empty-nutrition">
         <strong>Open Food Facts 未有這件產品的營養資料。</strong>
         <span>如果你手上有這件產品，可以<a href="${offUrl}" target="_blank" rel="noopener">在 Open Food Facts 補上營養標籤</a>。</span></div>`}
     </section>
+    ${p.origin === "user" && photoList(p).length > 1 ? `<section class="card"><div class="section-head"><h2>包裝相片</h2><span class="eyebrow">用戶上載</span></div>
+      <div class="gallery">${photoList(p).map((u) => `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="${esc(p.name)} 包裝相片" loading="lazy"></a>`).join("")}</div></section>` : ""}
     ${p.has_nutrition || p.ingredients ? `<section class="card ai-card" id="aiCard">
       <div class="section-head"><h2>AI 健康評分</h2><span class="eyebrow">DeepSeek</span></div>
       <div id="aiBody"></div>
@@ -312,7 +318,8 @@ async function productPage(code) {
     </section>` : ""}
     ${d.same_brand.length ? `<section class="card"><div class="section-head"><h2>同品牌產品</h2><span class="eyebrow">${esc(p.brand)}</span></div>
       <ul class="list plist">${d.same_brand.map(productRow).join("")}</ul></section>` : ""}
-    <p class="src source-line">資料來源：<a class="link" href="${offUrl}" target="_blank" rel="noopener">Open Food Facts</a>${p.last_modified ? ` · 最後更新：${esc(p.last_modified)}` : ""} · 授權：${esc(d.source.licence)}。${esc(d.source.note)}</p>
+    ${p.origin === "user" ? `<p class="src source-line">資料來源：本站用戶新增${p.last_modified ? `（${esc(p.last_modified)}）` : ""}，未經核實。</p>`
+      : `<p class="src source-line">資料來源：<a class="link" href="${offUrl}" target="_blank" rel="noopener">Open Food Facts</a>${p.last_modified ? ` · 最後更新：${esc(p.last_modified)}` : ""} · 授權：${esc(d.source.licence)}。${esc(d.source.note)}</p>`}
   </div>`;
 
   if (document.getElementById("aiBody")) runAi(p.code);   // automatic: saved answers load at once
@@ -404,11 +411,210 @@ function productNotFound(code) {
         <h1 class="page">找不到條碼 ${esc(code)}</h1>
         <p class="muted">本站及 Open Food Facts 都沒有這個條碼的產品。</p>
         <div class="nf-actions">
-          <button type="button" class="scan-cta" onclick="openScanner()">再掃描一次</button>
-          <a class="btn-ghost" href="https://world.openfoodfacts.org/cgi/product.pl?type=add&code=${encodeURIComponent(code)}" target="_blank" rel="noopener">在 Open Food Facts 新增產品</a>
+          <a class="scan-cta" href="#/p/add?code=${encodeURIComponent(code)}">新增這件產品</a>
+          <button type="button" class="btn-ghost" onclick="openScanner()">再掃描一次</button>
         </div>
+        <p class="src">新增的產品會即時在本站顯示，並標示為「用戶新增，未經核實」。</p>
       </div>
     </section>`;
+}
+
+// ---------- add a product (needs the add password) ----------
+
+const photoList = (p) => { try { return JSON.parse(p.photos || "[]"); } catch { return []; } };
+const ADD_PW_KEY = "addPassword";
+const ADD_NUTRIENTS = [
+  ["energy_kcal", "能量", "kcal", 950], ["energy_kj", "能量", "kJ", 4000], ["protein", "蛋白質", "克", 100],
+  ["fat", "總脂肪", "克", 100], ["fat_sat", "飽和脂肪", "克", 100], ["fat_trans", "反式脂肪", "克", 100],
+  ["carbohydrate", "碳水化合物", "克", 100], ["sugars", "糖", "克", 100], ["fibre", "膳食纖維", "克", 100],
+  ["sodium", "鈉", "毫克", 40000],
+];
+const PHOTO_SLOTS = [["front", "正面"], ["nutrition", "營養標籤"], ["ingredients", "成分表"]];
+
+async function productAdd(code) {
+  setActiveGroup(null);
+  document.title = "新增產品 - 包裝食品 - 食物營養資料庫";
+  if (!sessionStorage.getItem(ADD_PW_KEY)) return addPasswordGate(code);
+  const cats = PMETA.categories.slice().sort((a, b) => (a.id === "other") - (b.id === "other"));
+  app.innerHTML = `
+    ${crumbs([["包裝食品", "#/p"], ["新增產品", ""]])}
+    <h1 class="page">新增產品</h1>
+    <p class="muted">請按包裝上的資料填寫。產品會即時在本站顯示，並標示為「用戶新增，未經核實」。有 * 的欄目必須填寫。</p>
+    <form class="add-form" id="addForm" novalidate>
+      <section class="card">
+        <div class="section-head"><h2>基本資料</h2></div>
+        <div class="fgrid">
+          <label class="f"><span>條碼</span>
+            <input name="code" id="fCode" inputmode="numeric" pattern="[0-9]{6,14}" maxlength="14" value="${esc(code)}" placeholder="例如 4891028164456" autocomplete="off"></label>
+          <label class="f check"><input type="checkbox" id="fNoCode"> 這件產品沒有條碼</label>
+          <label class="f wide"><span>產品名稱 *</span><input name="name" required maxlength="200" placeholder="例如：維他檸檬茶（低糖）"></label>
+          <label class="f"><span>品牌</span><input name="brand" maxlength="80" placeholder="例如：維他"></label>
+          <label class="f"><span>淨含量／容量</span><input name="quantity" maxlength="40" placeholder="例如：250毫升"></label>
+          <label class="f"><span>類別 *</span><select name="category" required>
+            <option value="">請選擇</option>${cats.map((c) => `<option value="${c.id}">${esc(c.name_zh)}</option>`).join("")}</select></label>
+        </div>
+        <div class="f"><span>有售地區</span>
+          <div class="chipset">${PMETA.markets.map((m) => `<label class="chip"><input type="checkbox" name="markets" value="${m.id}" ${m.id === "HK" ? "checked" : ""}> ${esc(m.name_zh)}</label>`).join("")}</div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="section-head"><h2>營養標籤</h2><span class="eyebrow">香港標籤：能量 + 7 種營養素</span></div>
+        <div class="per-switch" role="radiogroup" aria-label="營養標籤單位">
+          <label><input type="radio" name="per" value="g" checked> 每100克</label>
+          <label><input type="radio" name="per" value="ml"> 每100毫升</label>
+        </div>
+        <div class="ngrid">${ADD_NUTRIENTS.map(([id, label, unit, max]) => `
+          <label class="f"><span>${label}${id === "energy_kj" ? "（如只有千焦）" : ""}</span>
+            <span class="unit-input"><input name="${id}" type="number" inputmode="decimal" min="0" max="${max}" step="any"><i>${unit}</i></span></label>`).join("")}
+        </div>
+        <div class="fgrid">
+          <label class="f"><span>每份食用分量</span><input name="serving_size" maxlength="60" placeholder="例如：1包"></label>
+          <label class="f"><span>每份重量／容量</span><span class="unit-input"><input name="serving_g" type="number" inputmode="decimal" min="0" max="5000" step="any"><i id="servingUnit">克</i></span></label>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="section-head"><h2>成分及致敏物</h2></div>
+        <label class="f wide"><span>成分</span><textarea name="ingredients" rows="4" maxlength="3000" placeholder="按包裝抄寫，例如：水、糖、紅茶、檸檬汁…"></textarea></label>
+        <label class="f wide"><span>致敏物</span><input name="allergens" maxlength="300" placeholder="例如：含牛奶、大豆"></label>
+      </section>
+
+      <section class="card">
+        <div class="section-head"><h2>包裝相片</h2><span class="eyebrow">最多 3 張</span></div>
+        <div class="photo-slots">${PHOTO_SLOTS.map(([id, label]) => `
+          <label class="photo-slot" id="slot-${id}">
+            <input type="file" accept="image/*" data-slot="${id}">
+            <span class="ph-empty">${ICON_BOX}<b>${label}</b><small>拍照或選擇相片</small></span>
+          </label>`).join("")}
+        </div>
+      </section>
+
+      <div class="add-actions">
+        <p class="form-status" id="addStatus" role="status"></p>
+        <button type="submit" class="scan-cta" id="addSubmit">提交產品</button>
+      </div>
+    </form>`;
+
+  const form = document.getElementById("addForm");
+  const codeInput = document.getElementById("fCode");
+  document.getElementById("fNoCode").addEventListener("change", (e) => {
+    codeInput.disabled = e.target.checked;
+    if (e.target.checked) codeInput.value = "";
+  });
+  form.querySelectorAll('input[name="per"]').forEach((r) => r.addEventListener("change", () => {
+    document.getElementById("servingUnit").textContent = form.per.value === "ml" ? "毫升" : "克";
+  }));
+  const photos = {};
+  form.querySelectorAll(".photo-slot input").forEach((inp) => inp.addEventListener("change", async () => {
+    const f = inp.files[0];
+    const slot = inp.closest(".photo-slot");
+    if (!f) return;
+    try {
+      photos[inp.dataset.slot] = await shrinkPhoto(f);
+      slot.style.backgroundImage = `url(${URL.createObjectURL(photos[inp.dataset.slot])})`;
+      slot.classList.add("has");
+    } catch {
+      setAddStatus("未能讀取這張相片，請試另一張。", true);
+    }
+  }));
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const err = addFormError(form);
+    if (err) return setAddStatus(err, true);
+    const fd = new FormData(form);
+    fd.delete("photo");
+    for (const [id] of PHOTO_SLOTS) if (photos[id]) fd.append("photo", photos[id], `${id}.jpg`);
+    const btn = document.getElementById("addSubmit");
+    btn.disabled = true;
+    setAddStatus("正在提交…");
+    try {
+      const r = await fetch("/api/contribute/product", {
+        method: "POST", body: fd, headers: { "x-add-password": sessionStorage.getItem(ADD_PW_KEY) || "" },
+      });
+      const d = await r.json().catch(() => ({}));
+      if (r.status === 201) {
+        cache.clear();   // lists and counts in this browser: read again
+        location.hash = `#/p/i/${d.code}`;
+        return;
+      }
+      if (r.status === 401) {
+        sessionStorage.removeItem(ADD_PW_KEY);
+        setAddStatus("新增密碼不正確，請重新輸入。", true);
+        return addPasswordGate(codeInput.value);
+      }
+      if (r.status === 409) return setAddStatus(`本站已有這個條碼的產品。<a class="link" href="#/p/i/${esc(d.code)}">查看產品</a>`, true, true);
+      setAddStatus(`未能提交：${d.error || "請稍後再試"}`, true);
+    } catch {
+      setAddStatus("網絡出錯，未能提交，請再試。", true);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+  window.scrollTo(0, 0);
+}
+
+function setAddStatus(msg, isError = false, html = false) {
+  const el = document.getElementById("addStatus");
+  if (!el) return;
+  el.className = "form-status" + (isError ? " warn" : "");
+  if (html) el.innerHTML = msg; else el.textContent = msg;
+}
+
+function addFormError(form) {
+  const v = (n) => (form.elements[n]?.value || "").trim();
+  if (!document.getElementById("fNoCode").checked && v("code") && !/^\d{6,14}$/.test(v("code"))) return "條碼應該是 6 至 14 位數字；如沒有條碼，請剔選「這件產品沒有條碼」。";
+  if (!document.getElementById("fNoCode").checked && !v("code")) return "請輸入條碼，或剔選「這件產品沒有條碼」。";
+  if (!v("name")) return "請輸入產品名稱。";
+  if (!v("category")) return "請選擇類別。";
+  for (const [id, label, , max] of ADD_NUTRIENTS) {
+    const x = v(id);
+    if (x && !(Number(x) >= 0 && Number(x) <= max)) return `${label}的數值不正確（0 至 ${max}）。`;
+  }
+  const num = (n) => (v(n) === "" ? null : Number(v(n)));
+  if (num("fat_sat") !== null && num("fat") !== null && num("fat_sat") > num("fat")) return "飽和脂肪不可以多過總脂肪。";
+  if (num("sugars") !== null && num("carbohydrate") !== null && num("sugars") > num("carbohydrate")) return "糖不可以多過碳水化合物。";
+  return "";
+}
+
+// Photos are made smaller in the browser before upload (longest side 1600 px, JPEG), so a phone
+// photo of 5-10 MB becomes about 300 KB.
+async function shrinkPhoto(file) {
+  const bmp = await createImageBitmap(file);
+  const scale = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(bmp.width * scale);
+  canvas.height = Math.round(bmp.height * scale);
+  canvas.getContext("2d").drawImage(bmp, 0, 0, canvas.width, canvas.height);
+  return new Promise((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("photo"))), "image/jpeg", 0.85));
+}
+
+function addPasswordGate(code) {
+  app.innerHTML = `
+    ${crumbs([["包裝食品", "#/p"], ["新增產品", ""]])}
+    <section class="card gate">
+      <h1 class="page">新增產品</h1>
+      <p class="muted">這是測試版功能。新增資料前，請輸入新增密碼。</p>
+      <form id="gateForm" class="gate-form">
+        <input type="password" id="gatePw" autocomplete="off" placeholder="新增密碼" aria-label="新增密碼" autofocus>
+        <button type="submit" class="scan-cta">確定</button>
+      </form>
+      <p class="form-status" id="gateStatus" role="status"></p>
+    </section>`;
+  document.getElementById("gateForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const pw = document.getElementById("gatePw").value;
+    const st = document.getElementById("gateStatus");
+    const r = await fetch("/api/contribute/check", { method: "POST", body: JSON.stringify({ password: pw }), headers: { "content-type": "application/json" } }).catch(() => null);
+    if (r && r.status === 204) {
+      sessionStorage.setItem(ADD_PW_KEY, pw);
+      productAdd(code);
+    } else {
+      st.className = "form-status warn";
+      st.textContent = r && r.status === 503 ? "新增功能尚未設定。" : r && r.status === 401 ? "密碼不正確，請再試。" : "網絡出錯，請再試。";
+      document.getElementById("gatePw").select();
+    }
+  });
 }
 
 // ---------- barcode scanner ----------
