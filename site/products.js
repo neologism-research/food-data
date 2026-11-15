@@ -302,7 +302,7 @@ async function productPage(code) {
     ${p.origin === "user" && photoList(p).length > 1 ? `<section class="card"><div class="section-head"><h2>包裝相片</h2><span class="eyebrow">用戶上載</span></div>
       <div class="gallery">${photoList(p).map((u) => `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="${esc(p.name)} 包裝相片" loading="lazy"></a>`).join("")}</div></section>` : ""}
     ${p.has_nutrition || p.ingredients ? `<section class="card ai-card" id="aiCard">
-      <div class="section-head"><h2>AI 健康評分</h2><span class="eyebrow">DeepSeek</span></div>
+      <div class="section-head"><h2>AI 健康評分</h2><span class="ai-state" id="aiState">DeepSeek</span></div>
       <div id="aiBody"></div>
     </section>` : ""}
     ${p.has_nutrition ? `<div class="two-col">
@@ -358,32 +358,70 @@ async function productPage(code) {
 // ---------- AI health score ----------
 
 const AI_BANDS = [[90, "excellent"], [70, "good"], [50, "ok"], [30, "poor"], [0, "bad"]];
+// Loading state: a placeholder with the same shape as the result (score ring, text lines, two lists),
+// so the card does not jump, and a status line that moves through the steps of the analysis.
+const AI_STEPS = ["正在讀取營養標籤…", "正在比較糖、脂肪及鈉的含量…", "正在參考食物安全中心的「三低」標準…", "正在撰寫分析…"];
+const AI_SKELETON = `
+  <div class="ai-top">
+    <svg class="ai-ring ai-ring-wait" viewBox="0 0 100 100" aria-hidden="true">
+      <circle r="42" cx="50" cy="50" fill="none" stroke="var(--track)" stroke-width="9"/>
+      <circle class="wait-arc" r="42" cx="50" cy="50" fill="none" stroke-width="9" stroke-linecap="round" stroke-dasharray="60 204"/>
+      <text x="50" y="58" text-anchor="middle" font-size="24" font-weight="900" fill="var(--ink-3)">AI</text>
+    </svg>
+    <div class="sk-col">
+      <div class="sk sk-title"></div><div class="sk sk-line"></div><div class="sk sk-line short"></div>
+      <p class="ai-step"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span id="aiStep">${AI_STEPS[0]}</span></p>
+    </div>
+  </div>
+  <div class="ai-lists" aria-hidden="true">
+    <div><div class="sk sk-h"></div><div class="sk sk-chip"></div><div class="sk sk-chip"></div></div>
+    <div><div class="sk sk-h"></div><div class="sk sk-chip"></div><div class="sk sk-chip"></div></div>
+  </div>
+  <p class="src">首次分析這件產品約需 5 至 15 秒；之後會即時顯示。</p>`;
+const reduceMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
 async function runAi(code) {
   const box = document.getElementById("aiBody");
   if (!box) return;
-  box.className = "ai-loading";
-  box.innerHTML = '<span class="spinner" aria-hidden="true"></span><span>AI 正在分析這件產品…（首次分析約需 5 至 15 秒）</span>';
+  const state = document.getElementById("aiState");
+  box.className = "ai-wait";
+  box.setAttribute("aria-busy", "true");
+  box.innerHTML = AI_SKELETON;
+  if (state) { state.textContent = "分析中"; state.classList.add("busy"); }
+  let step = 0;
+  const stepTimer = setInterval(() => {
+    const el = document.getElementById("aiStep");
+    if (!el || step >= AI_STEPS.length - 1) return clearInterval(stepTimer);
+    el.textContent = AI_STEPS[++step];
+  }, 2200);
+  const done = () => {
+    clearInterval(stepTimer);
+    box.removeAttribute("aria-busy");
+    if (state) { state.textContent = "DeepSeek"; state.classList.remove("busy"); }
+  };
   let a;
   try {
     a = await api(`/api/product-ai?code=${encodeURIComponent(code)}`);
   } catch (e) {
+    done();
     box.className = "ai-start";
     box.innerHTML = `<p class="muted">${e.status === 503 ? "AI 功能尚未設定。" : e.status === 422 ? "這件產品的資料不足，未能分析。" : "暫時未能完成分析，請稍後再試。"}</p>
       ${e.status === 503 || e.status === 422 ? "" : '<button type="button" class="btn-ghost" id="aiGo">再試一次</button>'}`;
     document.getElementById("aiGo")?.addEventListener("click", () => runAi(code));
     return;
   }
+  done();
   if (document.getElementById("aiBody") !== box) return;   // user went to another page
   const band = AI_BANDS.find(([min]) => a.score >= min)[1];
   const R = 42, C = 2 * Math.PI * R;
-  box.className = "ai-result";
+  box.className = "ai-result ai-in";
   box.innerHTML = `
     <div class="ai-top">
       <svg class="ai-ring band-${band}" viewBox="0 0 100 100" role="img" aria-label="健康分數 ${a.score} 分（滿分100）">
         <circle r="${R}" cx="50" cy="50" fill="none" stroke="var(--track)" stroke-width="9"/>
         <circle class="arc" r="${R}" cx="50" cy="50" fill="none" stroke-width="9" stroke-linecap="round"
-          stroke-dasharray="${(a.score / 100) * C} ${C}" transform="rotate(-90 50 50)"/>
-        <text x="50" y="52" text-anchor="middle" font-size="28" font-weight="900" fill="var(--ink)">${a.score}</text>
+          stroke-dasharray="0 ${C}" data-len="${(a.score / 100) * C}" data-c="${C}" transform="rotate(-90 50 50)"/>
+        <text class="ai-num" x="50" y="52" text-anchor="middle" font-size="28" font-weight="900" fill="var(--ink)">0</text>
         <text x="50" y="68" text-anchor="middle" font-size="10" font-weight="600" fill="var(--ink-3)">/ 100</text>
       </svg>
       <div>
@@ -398,6 +436,19 @@ async function runAi(code) {
     </div>` : ""}
     ${a.tip ? `<p class="ai-tip"><b>小貼士：</b>${esc(a.tip)}</p>` : ""}
     <p class="src">由 AI（${esc(a.model)}）根據本頁的標籤資料自動生成，可能有錯，只供參考，不能代替醫生或營養師的意見。</p>`;
+  // fill the ring and count the score up (no animation if the user asks for reduced motion)
+  const arc = box.querySelector(".ai-ring .arc"), num = box.querySelector(".ai-num");
+  const finish = () => { arc.setAttribute("stroke-dasharray", `${arc.dataset.len} ${arc.dataset.c}`); num.textContent = a.score; };
+  if (reduceMotion()) return finish();
+  requestAnimationFrame(() => requestAnimationFrame(finish));   // the CSS transition draws the ring
+  num.textContent = "0";
+  const t0 = performance.now(), ms = 900;
+  const tick = (t) => {
+    const k = Math.min((t - t0) / ms, 1);
+    num.textContent = Math.round(a.score * (1 - Math.pow(1 - k, 3)));
+    if (k < 1) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
 }
 
 function productNotFound(code) {
