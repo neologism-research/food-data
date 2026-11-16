@@ -176,7 +176,7 @@ function boxPage(id) {
       </div>
     </div>
     <section class="card ai-card" id="aiCard">
-      <div class="section-head"><h2>AI 組合評估</h2><span class="ai-state" id="aiState">DeepSeek</span></div>
+      <div class="section-head"><h2>AI 組合評估</h2><span class="ai-state" id="aiState">AI 分析</span></div>
       <div id="aiBody"></div>
     </section>`;
 

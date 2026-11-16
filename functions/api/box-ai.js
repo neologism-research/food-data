@@ -37,16 +37,22 @@ async function askDeepSeek(env, text) {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${env.DEEPSEEK_API_KEY}` },
     body: JSON.stringify({
-      model: env.DEEPSEEK_MODEL || "deepseek-flash",
+        model: env.DEEPSEEK_MODEL || "deepseek-flash",
       messages: [{ role: "system", content: SYSTEM }, { role: "user", content: text }],
       response_format: { type: "json_object" }, temperature: 0.3, max_tokens: 1500,
     }),
   });
-  if (!res.ok) throw Object.assign(new Error(`DeepSeek HTTP ${res.status}`), { status: res.status });
+  if (!res.ok) {
+    console.log("AI provider error", res.status, (await res.text()).slice(0, 300));   // server log only
+    throw Object.assign(new Error(`AI HTTP ${res.status}`), { status: res.status });
+  }
   const d = await res.json();
   const content = (d.choices?.[0]?.message?.content || "").trim();
   return content ? JSON.parse(content) : null;
 }
+
+// The site never names the AI provider or model: older saved answers had a "model" field.
+const publicAnswer = ({ model, ...rest }) => rest;
 
 const str = (s, n) => (typeof s === "string" ? s.trim().slice(0, n) : "");
 const list = (a) => (Array.isArray(a) ? a.map((s) => str(s, 70)).filter(Boolean).slice(0, 3) : []);
@@ -55,13 +61,13 @@ async function handle({ request, env }) {
   const raw = new URL(request.url).searchParams.get("items");
   const items = parseItems(raw);
   if (!items) return bad(`items must be 1-${MAX_ITEMS} entries of code:amount (amount 1-5000)`);
-  if (!env.DEEPSEEK_API_KEY) return bad("AI is not set up (DEEPSEEK_API_KEY is missing)", 503);
+  if (!env.DEEPSEEK_API_KEY) return bad("AI is not set up", 503);
   const key = items.map((i) => `${i.code}:${i.amount}`).sort().join(",");
   const db = pdb(env);
   await db.prepare(`CREATE TABLE IF NOT EXISTS box_ai (items TEXT NOT NULL, ai_version TEXT NOT NULL,
     result TEXT NOT NULL, created TEXT NOT NULL, PRIMARY KEY (items, ai_version)) WITHOUT ROWID`).run();
   const saved = await db.prepare("SELECT result FROM box_ai WHERE items = ?1 AND ai_version = ?2").bind(key, BOX_AI_VERSION).first();
-  if (saved) return json(JSON.parse(saved.result), MAX_AGE);
+  if (saved) return json(publicAnswer(JSON.parse(saved.result)), MAX_AGE);
 
   // the products, at the amounts in the box
   const found = await Promise.all(items.map((i) => getProduct(env, i.code)));
@@ -104,7 +110,7 @@ async function handle({ request, env }) {
   const result = {
     score, verdict: str(out.verdict, 14), summary: str(out.summary, 220), good: list(out.good), watch: list(out.watch),
     tip: str(out.tip, 120), confidence: ["high", "medium", "low"].includes(out.confidence) ? out.confidence : "medium",
-    model: env.DEEPSEEK_MODEL || "deepseek-flash", created: new Date().toISOString().slice(0, 10),
+    created: new Date().toISOString().slice(0, 10),
   };
   await db.prepare("INSERT OR REPLACE INTO box_ai (items, ai_version, result, created) VALUES (?1, ?2, ?3, ?4)")
     .bind(key, BOX_AI_VERSION, JSON.stringify(result), result.created).run();

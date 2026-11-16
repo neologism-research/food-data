@@ -317,7 +317,7 @@ async function productPage(code) {
     ${photoList(p).length > (p.origin === "user" ? 1 : 0) ? `<section class="card"><div class="section-head"><h2>包裝相片</h2><span class="eyebrow">用戶上載</span></div>
       <div class="gallery">${photoList(p).map((u) => `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="${esc(p.name)} 包裝相片" loading="lazy"></a>`).join("")}</div></section>` : ""}
     ${p.has_nutrition || p.ingredients ? `<section class="card ai-card" id="aiCard">
-      <div class="section-head"><h2>AI 健康評分</h2><span class="ai-state" id="aiState">DeepSeek</span></div>
+      <div class="section-head"><h2>AI 健康評分</h2><span class="ai-state" id="aiState">AI 分析</span></div>
       <div id="aiBody"></div>
     </section>` : ""}
     ${p.has_nutrition ? `<div class="two-col">
@@ -424,7 +424,7 @@ async function runAi(code, url = null, note = "首次分析這件產品約需 5 
   const done = () => {
     clearInterval(stepTimer);
     box.removeAttribute("aria-busy");
-    if (state) { state.textContent = "DeepSeek"; state.classList.remove("busy"); }
+    if (state) { state.textContent = "AI 分析"; state.classList.remove("busy"); }
   };
   let a;
   try {
@@ -463,7 +463,7 @@ async function runAi(code, url = null, note = "首次分析這件產品約需 5 
       ${a.watch.length ? `<div><h3>要注意</h3><ul class="ai-watch">${a.watch.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>` : ""}
     </div>` : ""}
     ${a.tip ? `<p class="ai-tip"><b>小貼士：</b>${esc(a.tip)}</p>` : ""}
-    <p class="src">由 AI（${esc(a.model)}）根據本頁的標籤資料自動生成，可能有錯，只供參考，不能代替醫生或營養師的意見。</p>`;
+    <p class="src">由 AI 根據本頁的標籤資料自動生成，可能有錯，只供參考，不能代替醫生或營養師的意見。</p>`;
   // fill the ring and count the score up (no animation if the user asks for reduced motion)
   const arc = box.querySelector(".ai-ring .arc"), num = box.querySelector(".ai-num");
   const finish = () => { arc.setAttribute("stroke-dasharray", `${arc.dataset.len} ${arc.dataset.c}`); num.textContent = a.score; };

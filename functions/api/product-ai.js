@@ -49,14 +49,17 @@ async function askDeepSeek(env, text) {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${env.DEEPSEEK_API_KEY}` },
     body: JSON.stringify({
-      model: env.DEEPSEEK_MODEL || "deepseek-flash",
+        model: env.DEEPSEEK_MODEL || "deepseek-flash",
       messages: [{ role: "system", content: SYSTEM }, { role: "user", content: text }],
       response_format: { type: "json_object" },
       temperature: 0.3,
       max_tokens: 1200,
     }),
   });
-  if (!res.ok) throw Object.assign(new Error(`DeepSeek HTTP ${res.status}`), { status: res.status });
+  if (!res.ok) {
+    console.log("AI provider error", res.status, (await res.text()).slice(0, 300));   // server log only
+    throw Object.assign(new Error(`AI HTTP ${res.status}`), { status: res.status });
+  }
   const d = await res.json();
   const content = (d.choices?.[0]?.message?.content || "").trim();
   return content ? JSON.parse(content) : null;   // blank content = the model could not make valid JSON
@@ -73,13 +76,16 @@ async function savedTable(db) {
   }
 }
 
+// The site never names the AI provider or model: older saved answers had a "model" field.
+const publicAnswer = ({ model, ...rest }) => rest;
+
 const str = (s, n) => (typeof s === "string" ? s.trim().slice(0, n) : "");
 const list = (a) => (Array.isArray(a) ? a.map((s) => str(s, 60)).filter(Boolean).slice(0, 3) : []);
 
 async function handle({ request, env }) {
   const code = new URL(request.url).searchParams.get("code");
   if (!barcodeVariants(code).length) return bad("code must be a barcode (6-14 digits)");
-  if (!env.DEEPSEEK_API_KEY) return bad("AI is not set up (DEEPSEEK_API_KEY is missing)", 503);
+  if (!env.DEEPSEEK_API_KEY) return bad("AI is not set up", 503);
   const found = await getProduct(env, code);
   if (!found) return bad("product not found", 404);
   const p = found.product;
@@ -87,7 +93,7 @@ async function handle({ request, env }) {
   await savedTable(db);
   const saved = await db.prepare("SELECT result FROM product_ai WHERE code = ?1 AND ai_version = ?2")
     .bind(p.code, AI_VERSION).first();
-  if (saved) return json(JSON.parse(saved.result), MAX_AGE);
+  if (saved) return json(publicAnswer(JSON.parse(saved.result)), MAX_AGE);
   if (!p.has_nutrition && !p.ingredients) return bad("not enough data for an analysis", 422);
 
   let out = null;
@@ -109,7 +115,6 @@ async function handle({ request, env }) {
     watch: list(out.watch),
     tip: str(out.tip, 100),
     confidence: ["high", "medium", "low"].includes(out.confidence) ? out.confidence : "medium",
-    model: env.DEEPSEEK_MODEL || "deepseek-flash",
     created: new Date().toISOString().slice(0, 10),
   };
   await db.prepare("INSERT OR REPLACE INTO product_ai (code, ai_version, result, created) VALUES (?1, ?2, ?3, ?4)")
