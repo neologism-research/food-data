@@ -306,6 +306,7 @@ async function productPage(code) {
         <div class="serving" id="serving">
           ${servings.map((s, i) => `<button type="button" data-g="${s.g}" data-t="${esc(s.text)}" class="${i === 0 ? "on" : ""}">${esc(s.text)}</button>`).join("")}
           <label>自訂 <input type="number" id="grams" min="1" max="5000" step="1" placeholder="${u}" aria-label="自訂分量"> ${u}</label>
+          <button type="button" class="add-box-btn" id="addBoxBtn">＋ 加入零食盒</button>
         </div>
       </div>
       <div class="kcal-card" id="kcalCard"></div>` : `<div class="empty-nutrition fill-cta">
@@ -344,7 +345,10 @@ async function productPage(code) {
   document.getElementById("delBtn")?.addEventListener("click", () => deleteProduct(p));
   if (p.has_nutrition) {
     const nv = Object.fromEntries(Object.entries(n).map(([k, v]) => [k, { value: v }]));   // shape used by macros()
+    let curAmount = 100;
+    document.getElementById("addBoxBtn").addEventListener("click", () => addProductToBox(p, curAmount));
     const render = (amount, text) => {
+      curAmount = amount;
       const factor = amount / 100;
       document.getElementById("kcalCard").innerHTML = `
         <div><span class="eyebrow">每${esc(text)}</span><div class="big">${fmt(n.energy_kcal, factor)}<small>kcal</small></div></div>
@@ -399,13 +403,17 @@ const AI_SKELETON = `
   <p class="src">首次分析這件產品約需 5 至 15 秒；之後會即時顯示。</p>`;
 const reduceMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-async function runAi(code) {
+// url: the AI address (default: the product AI of code). Used by the product page and the snack box.
+async function runAi(code, url = null, note = "首次分析這件產品約需 5 至 15 秒；之後會即時顯示。") {
   const box = document.getElementById("aiBody");
   if (!box) return;
+  const token = String(Math.random());
+  box.dataset.req = token;   // a newer request (box changed again) wins
   const state = document.getElementById("aiState");
   box.className = "ai-wait";
+  box.classList.remove("stale");
   box.setAttribute("aria-busy", "true");
-  box.innerHTML = AI_SKELETON;
+  box.innerHTML = AI_SKELETON.replace("首次分析這件產品約需 5 至 15 秒；之後會即時顯示。", note);
   if (state) { state.textContent = "分析中"; state.classList.add("busy"); }
   let step = 0;
   const stepTimer = setInterval(() => {
@@ -420,17 +428,18 @@ async function runAi(code) {
   };
   let a;
   try {
-    a = await api(`/api/product-ai?code=${encodeURIComponent(code)}${freshArg(code)}`);
+    a = await api(url || `/api/product-ai?code=${encodeURIComponent(code)}${freshArg(code)}`);
   } catch (e) {
+    if (box.dataset.req !== token) return clearInterval(stepTimer);
     done();
     box.className = "ai-start";
     box.innerHTML = `<p class="muted">${e.status === 503 ? "AI 功能尚未設定。" : e.status === 422 ? "這件產品的資料不足，未能分析。" : "暫時未能完成分析，請稍後再試。"}</p>
       ${e.status === 503 || e.status === 422 ? "" : '<button type="button" class="btn-ghost" id="aiGo">再試一次</button>'}`;
-    document.getElementById("aiGo")?.addEventListener("click", () => runAi(code));
+    document.getElementById("aiGo")?.addEventListener("click", () => runAi(code, url, note));
     return;
   }
+  if (document.getElementById("aiBody") !== box || box.dataset.req !== token) return clearInterval(stepTimer);   // left the page, or a newer request
   done();
-  if (document.getElementById("aiBody") !== box) return;   // user went to another page
   const band = AI_BANDS.find(([min]) => a.score >= min)[1];
   const R = 42, C = 2 * Math.PI * R;
   box.className = "ai-result ai-in";
@@ -791,15 +800,34 @@ function getDetector() {
 const scanEl = (id) => document.getElementById(id);
 const scanStatus = (t, cls = "") => { const s = scanEl("scanStatus"); s.textContent = t; s.className = "scan-status " + cls; };
 
-function foundCode(code) {
-  closeScanner();
+// scanHandler: null = open the product page of the code. A function = continuous mode (snack box):
+// each new code is passed to it, the camera stays open, and its answer is shown as the status.
+let scanHandler = null, lastScan = { code: "", t: 0 };
+
+async function foundCode(code) {
   if (navigator.vibrate) navigator.vibrate(60);
-  location.hash = `#/p/i/${code}`;
+  if (!scanHandler) {
+    closeScanner();
+    location.hash = `#/p/i/${code}`;
+    return;
+  }
+  if (code === lastScan.code && Date.now() - lastScan.t < 3000) return;   // same pack still in view
+  lastScan = { code, t: Date.now() };
+  scanStatus("正在加入…");
+  try {
+    const [msg, ok] = await scanHandler(code);
+    scanStatus(msg, ok ? "ok" : "warn");
+  } catch {
+    scanStatus("未能加入，請再試。", "warn");
+  }
 }
 
-async function openScanner() {
+async function openScanner(handler = null) {
   const dlg = scanEl("scanner");
   if (dlg.open) return;
+  scanHandler = typeof handler === "function" ? handler : null;
+  lastScan = { code: "", t: 0 };
+  scanEl("scanTitle").textContent = scanHandler ? "掃描加入零食盒" : "掃描條碼";
   dlg.showModal();
   scanEl("scanCode").value = "";
   scanEl("scanView").classList.remove("off");
@@ -819,13 +847,14 @@ async function openScanner() {
     const video = scanEl("scanVideo");
     video.srcObject = stream;
     await video.play();
-    scanStatus("把條碼放在框內");
+    scanStatus(scanHandler ? "逐件掃描，掃完按右上角關閉" : "把條碼放在框內");
     const tick = async () => {
       if (!scanStream) return;
       try {
         const codes = await detector.detect(video);
         const hit = codes.find((c) => /^\d{6,14}$/.test(c.rawValue));
-        if (hit) return foundCode(hit.rawValue);
+        if (hit && !scanHandler) return foundCode(hit.rawValue);
+        if (hit) await foundCode(hit.rawValue);
       } catch { /* frame not ready */ }
       scanTimer = setTimeout(tick, 120);
     };
@@ -848,14 +877,14 @@ function closeScanner() {
 
 (function initScanner() {
   const dlg = scanEl("scanner");
-  scanEl("scanBtn").addEventListener("click", openScanner);
+  scanEl("scanBtn").addEventListener("click", () => openScanner());
   scanEl("scanClose").addEventListener("click", closeScanner);
   dlg.addEventListener("close", closeScanner);
   dlg.addEventListener("click", (e) => { if (e.target === dlg) closeScanner(); });
   scanEl("scanManual").addEventListener("submit", (e) => {
     e.preventDefault();
     const v = scanEl("scanCode").value.replace(/\D/g, "");
-    if (/^\d{6,14}$/.test(v)) foundCode(v);
+    if (/^\d{6,14}$/.test(v)) { scanEl("scanCode").value = ""; lastScan = { code: "", t: 0 }; foundCode(v); }
     else scanStatus("條碼應該是 6 至 14 位數字。", "warn");
   });
   scanEl("scanFile").addEventListener("change", async (e) => {

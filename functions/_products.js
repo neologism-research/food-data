@@ -12,7 +12,8 @@ export const OFF_ATTRIBUTION = {
 };
 
 export const PRODUCT_LIST_COLS = ["code", "name", "brand", "quantity", "category", "image", "nutriscore",
-  "energy_kcal", "protein", "fat", "carbohydrate", "has_nutrition", "origin"];
+  "energy_kcal", "protein", "fat", "carbohydrate", "sugars", "sodium", "has_nutrition", "origin",
+  "serving_size", "serving_g"];
 
 // Adding products on the site needs the secret ADD_PASSWORD (separate from the site password).
 // Returns null if the password is correct, else an error Response.

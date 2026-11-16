@@ -83,7 +83,7 @@ function foodRow(f, extra = "") {
 }
 
 // The two sections of the site: foods (government composition data) and packaged products (Open Food Facts).
-const inProducts = () => /^#\/p(\/|\?|$)/.test(location.hash);
+const inProducts = () => /^#\/(p|box)(\/|\?|$)/.test(location.hash);
 const PLACEHOLDER = { foods: "搜尋食物，例如：虎蝦、白飯、apple", products: "搜尋產品名稱、品牌或條碼" };
 let groupbarFor = null;
 function setSection(sec) {
@@ -433,13 +433,14 @@ async function search(term) {
 async function route() {
   const [path, query = ""] = location.hash.replace(/^#\/?/, "").split("?");
   const parts = path.split("/").map(decodeURIComponent);
-  const products = parts[0] === "p";
-  document.body.classList.toggle("is-home", products ? !parts[1] : !/^#\/(f|c|search)\//.test(location.hash));
+  const products = parts[0] === "p" || parts[0] === "box";   // the snack box belongs to the products section
+  document.body.classList.toggle("is-home", parts[0] === "box" ? false : products ? !parts[1] : !/^#\/(f|c|search)\//.test(location.hash));
   try {
     if (products) {
       await loadProductMeta();
       setSection("products");
-      await productRoute(parts.slice(1), new URLSearchParams(query));
+      if (parts[0] === "box") await boxRoute(parts.slice(1));
+      else await productRoute(parts.slice(1), new URLSearchParams(query));
       return;
     }
     setSection("foods");

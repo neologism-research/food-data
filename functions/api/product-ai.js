@@ -53,7 +53,7 @@ async function askDeepSeek(env, text) {
       messages: [{ role: "system", content: SYSTEM }, { role: "user", content: text }],
       response_format: { type: "json_object" },
       temperature: 0.3,
-      max_tokens: 800,
+      max_tokens: 1200,
     }),
   });
   if (!res.ok) throw Object.assign(new Error(`DeepSeek HTTP ${res.status}`), { status: res.status });

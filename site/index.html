@@ -22,6 +22,10 @@
       <svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
       <input id="q" type="search" placeholder="搜尋食物，例如：虎蝦、白飯、apple" autocomplete="off" aria-label="搜尋食物">
     </form>
+    <a class="box-btn" id="boxBtn" href="#/box" aria-label="零食盒" title="零食盒">
+      <svg class="icon" viewBox="0 0 24 24"><path d="M3 8h18l-1.5 12a1 1 0 0 1-1 .9H5.5a1 1 0 0 1-1-.9z"/><path d="M8 8V6a4 4 0 0 1 8 0v2"/></svg>
+      <span class="lbl">零食盒</span><span class="box-n" id="boxN" hidden></span>
+    </a>
     <button type="button" class="scan-btn" id="scanBtn" aria-label="掃描條碼" title="掃描條碼">
       <svg class="icon" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 8v8M10.5 8v8M14 8v8M17 8v8"/></svg>
       <span>掃描條碼</span>
@@ -73,5 +77,6 @@
 
 <script src="app.js"></script>
 <script src="products.js"></script>
+<script src="box.js"></script>
 </body>
 </html>
